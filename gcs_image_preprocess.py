@@ -61,8 +61,6 @@ class PipelineConfig:
     output_uri: str
     resize_w: int
     resize_h: int
-    crop_w: int
-    crop_h: int
     thumb_size: int
     output_format: str = "JPEG"  # "JPEG", "PNG", "WEBP"
     jpeg_quality: int = 90
@@ -145,11 +143,6 @@ def process_one(
     # 1) Resize (preserve aspect ratio, fit within box)
     resized = ImageOps.contain(im, (conf.resize_w, conf.resize_h), method=Image.Resampling.LANCZOS)
 
-    # 2) Center-crop to target
-    crop_w, crop_h = conf.crop_w, conf.crop_h
-    # If the resized image is smaller than crop, pad first using ImageOps.fit to cover edge cases.
-    cropped = ImageOps.fit(resized, (crop_w, crop_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-
     # 3) Square thumbnail (keep center crop, maintain aspect)
     thumb = ImageOps.fit(im, (conf.thumb_size, conf.thumb_size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
 
@@ -158,7 +151,6 @@ def process_one(
     ext = to_format_extension(conf.output_format)
     out_paths = {
         "resized": f"{out_prefix}resized/{base_name}.{ext}",
-        "cropped": f"{out_prefix}cropped/{base_name}.{ext}",
         "thumb":   f"{out_prefix}thumbnails/{base_name}.{ext}",
     }
 
@@ -192,12 +184,9 @@ def process_one(
             return False
 
     ok1 = _save_and_upload(resized, out_paths["resized"])
-    ok2 = _save_and_upload(cropped, out_paths["cropped"])
-    ok3 = _save_and_upload(thumb,   out_paths["thumb"])
-
-    print("Upload results:", ok1, ok2, ok3)
-
-    status = "ok" if (ok1 and ok2 and ok3) else "partial_fail"
+    ok2 = _save_and_upload(thumb,   out_paths["thumb"])
+    print("Upload results:", ok1, ok2)
+    status = "ok" if (ok1 and ok2) else "partial_fail"
 
     if status == "ok":
         print(f"[SUCCESS] {in_key} processed")
@@ -238,7 +227,6 @@ def main():
     parser.add_argument("--input", required=True, help="Input GCS URI, e.g., gs://my-bucket/images/")
     parser.add_argument("--output", required=True, help="Output GCS URI, e.g., gs://processed-bucket/processed/")
     parser.add_argument("--resize", default="1024x768", help="Resize WxH, e.g., 1024x768")
-    parser.add_argument("--crop", default="1024x768", help="Center crop WxH, e.g., 1024x768")
     parser.add_argument("--thumb", default="256", help="Square thumbnail side length (pixels), e.g., 256")
     parser.add_argument("--format", default="JPEG", choices=["JPEG", "PNG", "WEBP"], help="Output image format")
     parser.add_argument("--jpeg_quality", type=int, default=90, help="JPEG quality (only for JPEG)")
@@ -247,7 +235,6 @@ def main():
     args = parser.parse_args()
 
     resize_w, resize_h = map(int, args.resize.lower().split("x"))
-    crop_w, crop_h = map(int, args.crop.lower().split("x"))
     thumb_size = int(args.thumb)
 
     conf = PipelineConfig(
@@ -255,8 +242,6 @@ def main():
         output_uri=args.output,
         resize_w=resize_w,
         resize_h=resize_h,
-        crop_w=crop_w,
-        crop_h=crop_h,
         thumb_size=thumb_size,
         output_format=args.format,
         jpeg_quality=args.jpeg_quality,
